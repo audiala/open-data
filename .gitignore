@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .env
+
+# never publish prod dumps from this repo
+backups/
+*.sql

@@ -2,8 +2,11 @@
 
 **33,148 places** across **93 countries** and **~1,200 cities**, each with a
 Wikidata QID, coordinates, names in **11 languages**, a type/category slug,
-fame signals, and a link to a published, human-reviewed-pipeline travel guide
-on [audiala.com](https://audiala.com) in each language.
+fame signals, and a link to a published travel guide on
+[audiala.com](https://audiala.com) in each language. Guides are produced by a
+research → drafting → schema-validation → fact-check pipeline
+([how we make our guides](https://audiala.com/about/editorial-process/)); we
+do not claim a human reads every page.
 
 - `data/audiala-places.geojson` — GeoJSON `FeatureCollection` (55.3 MB)
 - `data/audiala-places.csv` — same rows, flat CSV (40.5 MB)
@@ -203,6 +206,7 @@ derived dataset or paper, cite the dataset name and link to audiala.com.
 
 ## Update cadence
 
-TBD — this is the initial staged release. The build is fully scripted, so
-refreshes are cheap; a cadence will be announced once the publication
-channel (GitHub/Hugging Face) is settled.
+Initial release, 2026-07-25. The build is fully scripted, so refreshes are
+cheap; expect periodic updates as coverage grows. Published on
+[GitHub](https://github.com/audiala/open-data) and
+[Hugging Face](https://huggingface.co/datasets/audiala/audiala-places).

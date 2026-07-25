@@ -214,11 +214,12 @@ _COUNTRY_ALIASES = {
 }
 
 # Display-only country normalization for the country_en / country_iso2 COLUMNS.
-# Deliberately NOT merged into _COUNTRY_ALIASES: the site's URL exporter does
-# not know these aliases either, so folding them into slug resolution would
-# produce URLs that differ from the live site (e.g. articles stored with
-# country "Türkiye" are published under /en/turkiye/…, and /en/turkey/… is a
-# 410). URL derivation must stay byte-identical with the exporters.
+# 2026-07-24: the source anomalies were fixed in prod (articles rows with
+# country "Türkiye"/"奥地利" normalized to "Turkey"/"Austria" and republished
+# under the canonical slugs; old /en/turkiye/… and oei/奥地利 paths are now
+# noindex redirect stubs via audiala-hugo scripts/slug_redirects.json).
+# These aliases are kept as harmless no-op belt-and-braces for any future
+# regression; with a clean DB they match zero rows.
 DISPLAY_COUNTRY_ALIASES = {
     "türkiye": "Turkey",
     "奥地利": "Austria",   # simplified-Chinese variant seen in a few EN rows
