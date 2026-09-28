@@ -1,16 +1,19 @@
 # Audiala Places — a curated, multilingual open dataset of travel POIs
 
-**33,148 places** across **93 countries** and **~1,200 cities**, each with a
+**33,289 places** across **93 countries** and **~1,360 cities**, each with a
 Wikidata QID, coordinates, names in **11 languages**, a type/category slug,
-fame signals, and a link to a published travel guide on
-[audiala.com](https://audiala.com) in each language. Guides are produced by a
+fame signals, a link to a published travel guide on
+[audiala.com](https://audiala.com) in each language, and an **ML target**:
+how visible each place's guides are in Google Search
+([`search_impressions_decile`](#ml-task-predict-search-visibility)). Guides are produced by a
 research → drafting → schema-validation → fact-check pipeline
 ([how we make our guides](https://audiala.com/about/editorial-process/)); we
 do not claim a human reads every page.
 
-- `data/audiala-places.geojson` — GeoJSON `FeatureCollection` (55.3 MB)
-- `data/audiala-places.csv` — same rows, flat CSV (40.5 MB)
+- `data/audiala-places.geojson` — GeoJSON `FeatureCollection` (55.6 MB)
+- `data/audiala-places.csv` — same rows, flat CSV (40.7 MB)
 - `build/build_dataset.py` — the reproducible build script
+- `build/add_search_target.py` — adds the ML target column
 
 **License: [CC BY 4.0](LICENSE)** · **Attribution required:**
 *"Data by Audiala — [audiala.com](https://audiala.com)"* (see
@@ -51,6 +54,7 @@ OpenStreetMap directly. What this dataset adds over those sources is:
 | `wikidata_pagerank` | Wikidata PageRank score ([danker](https://danker.s3.amazonaws.com/index.html) all-wiki links run); present for 83 % of rows |
 | `sitelinks` | Number of Wikimedia project pages linked to the entity (proxy for cross-language notability); present for ~100 % of rows |
 | `url_en` … `url_ru` | Canonical audiala.com guide URL in each language (native-script paths for hi/zh/ja/ru); emitted only when a guide is published in that language (≥ 99.9 % per language) |
+| `search_impressions_decile` | **ML target.** Google Web search impressions of the place's guide pages (all 11 languages summed, 2026-07-03 → 2026-09-25) as a relative decile: `0` = no impressions (177 rows), `1` = lowest … `10` = highest (~3,311 rows each). See [ML task](#ml-task-predict-search-visibility) |
 
 ## Methodology
 
@@ -63,7 +67,7 @@ database + SPARQL against a self-hosted Wikidata [QLever] endpoint):
    train stations, offices, …), entities without usable coordinates, and
    entities whose Wikidata classification disqualifies them (diplomatic
    missions, Wikimedia list/disambiguation pages, and articles mistakenly
-   keyed to a *person's* QID — 188 rows dropped in this build).
+   keyed to a *person's* QID — 207 rows dropped in this build).
 2. **Names** — Audiala's `translations` table (one column per language),
    English fallback.
 3. **Coordinates** — best place record per QID (English-language record
@@ -77,72 +81,106 @@ database + SPARQL against a self-hosted Wikidata [QLever] endpoint):
 6. **URLs** — recomputed with the exact permalink logic of the site's page
    exporters (same slugification, including native-script slugs and
    per-language country slugs), so dataset URLs match the live site.
+7. **ML target** — `build/add_search_target.py` joins Audiala's private
+   Google Search Console bulk export (Web search type) to every `url_<lang>`,
+   after folding `#fragment` URLs and old slugs into the canonical page, sums
+   impressions per place and converts the total to a relative decile. Raw
+   impressions, clicks, CTR and ranking positions are not published.
 
 **QA on this build:** GeoJSON parses; CSV row count = GeoJSON feature count =
-33,148; coordinates validated in range; 330 random URLs across all 11
-languages returned **99.7 % HTTP 200** (1 × 410 tombstoned page).
+33,289; every row has an ISO2 code; coordinates validated in range; 300
+random `url_en` values returned **100 % HTTP 200**.
 
-## Row counts (build of 2026-07-22)
+## Row counts (build of 2026-09-28)
 
 | Metric | Value |
 |---|---|
-| Places (rows) | 33,148 |
+| Places (rows) | 33,289 |
 | Countries | 93 |
-| Distinct (country, city) pairs | 1,204 |
+| Distinct (country, city) pairs | 1,363 |
 | Languages | 11 |
 | Native-name coverage | 99.8–99.9 % per language |
 | Guide-URL coverage | 99.9–100 % per language |
-| `structured` tier | 451 |
-| `legacy` tier | 32,697 |
+| `structured` tier | 541 |
+| `legacy` tier | 32,748 |
 | With Wikidata PageRank | 83.2 % |
 | With sitelink count | ~100 % |
 
-Top countries: US 4,150 · Italy 4,053 · France 2,299 · Germany 2,081 ·
-Spain 2,077 · UK 1,467 · India 1,204 · Poland 877 · Canada 815 · Brazil 804.
+Top countries: US 4,151 · Italy 4,056 · France 2,308 · Germany 2,085 ·
+Spain 2,076 · UK 1,490 · India 1,203 · Poland 878 · Canada 815 · Brazil 804.
 
 ### Category
 
-50 slugs. Distribution: building 5,408 · museum 4,422 · attraction 3,013 ·
-statue 2,214 · church 2,074 · monument 1,523 · theatre 1,381 · palace 1,141 ·
-square 1,065 · fortification 915 · stadium 839 · park 833 · bridge 751 ·
-archaeological-site 678 · temple 523 · locality 514 · garden 479 · mosque 461 ·
-cathedral 454 · library 425 · monastery 408 · castle 403 · cemetery 361 ·
-tower 356 · neighbourhood 280 · university 249 · opera-house 213 · town 212 ·
+50 slugs. Distribution: building 5,477 · museum 4,428 · attraction 3,020 ·
+statue 2,218 · church 2,082 · monument 1,525 · theatre 1,381 · palace 1,142 ·
+square 1,066 · fortification 914 · stadium 839 · park 834 · bridge 754 ·
+archaeological-site 678 · temple 524 · locality 514 · garden 481 · mosque 461 ·
+cathedral 457 · library 426 · monastery 409 · castle 407 · cemetery 361 ·
+tower 356 · neighbourhood 280 · university 251 · opera-house 213 · town 212 ·
 zoo 177 · botanical-garden 170 · synagogue 167 · village 152 · canal 120 ·
-street 82 · lighthouse 78 · amusement-park 76 · religious-site 65 ·
-restaurant 59 · island 55 · lake 52 · cave 52 · mountain 46 · beach 44 ·
-shinto-shrine 29 · ship 27 · memorial 26 · city-gate 23 · waterfall 21 ·
-market 20 · fountain 12.
+street 95 · lighthouse 78 · amusement-park 76 · restaurant 70 · religious-site 65 ·
+island 56 · lake 52 · cave 52 · mountain 47 · beach 44 · shinto-shrine 29 ·
+ship 27 · memorial 26 · city-gate 23 · waterfall 21 · market 20 · fountain 12.
 
 ## Sample — 20 highest-sitelink entries (non-settlement categories)
 
-| QID | Name (en) | Name (ja) | Category | City | CC | Sitelinks | PageRank |
-|---|---|---|---|---|---|---|---|
-| Q85 | [Cairo](https://audiala.com/en/egypt/cairo-governorate/cairo) | カイロ | archaeological-site | Cairo Governorate | EG | 259 | 1349.7 |
-| Q12501 | [Great Wall of China](https://audiala.com/en/china/beijing/great-wall-of-china) | 万里の長城 | fortification | Beijing | CN | 193 | 142.6 |
-| Q243 | [Eiffel Tower](https://audiala.com/en/france/paris/eiffel-tower) | エッフェル塔 | tower | Paris | FR | 189 | 225.2 |
-| Q9141 | [Taj Mahal](https://audiala.com/en/india/agra/taj-mahal) | タージ・マハル | monument | Agra | IN | 180 | 94.8 |
-| Q478595 | [Tan Son Nhat International Airport](https://audiala.com/en/vietnam/ho-chi-minh-city/tan-son-nhat-international-airport) | タンソンニャット国際空港 | building | Ho Chi Minh City | VN | 170 | 15.5 |
-| Q19675 | [Louvre Museum](https://audiala.com/en/france/paris/louvre-museum) | ルーヴル美術館 | museum | Paris | FR | 165 | 460.8 |
-| Q9202 | [Statue of Liberty](https://audiala.com/en/united-states/new-york-city/statue-of-liberty) | 自由の女神像 | statue | New York City | US | 156 | 142.1 |
-| Q12506 | [Hagia Sophia](https://audiala.com/en/turkey/istanbul/hagia-sophia) | アヤソフィア | mosque | Istanbul | TR | 150 | 132.5 |
-| Q676203 | [Machu Picchu](https://audiala.com/en/peru/machu-picchu/machu-picchu) | マチュ・ピチュ | archaeological-site | Machu Picchu | PE | 147 | 63.0 |
-| Q10285 | [Colosseum](https://audiala.com/en/italy/rome/colosseum) | コロッセオ | museum | Rome | IT | 146 | 129.8 |
-| Q35525 | [White House](https://audiala.com/en/united-states/washington/white-house) | ホワイトハウス | palace | Washington | US | 143 | 485.0 |
-| Q5086 | [Berlin Wall](https://audiala.com/en/germany/berlin/berliner-mauer) | ベルリンの壁 | fortification | Berlin | DE | 141 | 303.6 |
-| Q12495 | [Burj Khalifa](https://audiala.com/en/united-arab-emirates/dubai/burj-khalifa) | ブルジュ・ハリーファ | building | Dubai | AE | 140 | 49.6 |
-| Q34221 | [Niagara Falls](https://audiala.com/en/canada/niagara-falls/niagara-falls) | ナイアガラの滝 | waterfall | Niagara Falls | CA | 135 | 93.9 |
-| Q10288 | [Parthenon](https://audiala.com/en/greece/athens/parthenon) | パルテノン神殿 | temple | Athens | GR | 133 | 141.1 |
-| Q41180 | [La Marseillaise](https://audiala.com/en/france/marseille/la-marseillaise) | ラ・マルセイエーズ | attraction | Marseille | FR | 124 | 141.1 |
-| Q2981 | [Notre-Dame de Paris](https://audiala.com/en/france/paris/notre-dame-de-paris) | ノートルダム大聖堂 | cathedral | Paris | FR | 124 | 172.4 |
-| Q37200 | [Great Pyramid of Giza](https://audiala.com/en/egypt/giza-governorate/great-pyramid-of-giza) | ギザの大ピラミッド | archaeological-site | Giza Governorate | EG | 123 | 66.1 |
-| Q23402 | [Musée d'Orsay](https://audiala.com/en/france/paris/musee-dorsay) | オルセー美術館 | museum | Paris | FR | 123 | 146.5 |
-| Q16990 | [Mount Etna](https://audiala.com/en/italy/zafferana-etnea/mount-etna) | エトナ火山 | mountain | Zafferana Etnea | IT | 123 | 98.4 |
+| QID | Name (en) | Name (ja) | Category | City | CC | Sitelinks | PageRank | Search decile |
+|---|---|---|---|---|---|---|---|---|
+| Q85 | [Cairo](https://audiala.com/en/egypt/cairo/cairo) | カイロ | archaeological-site | Cairo | EG | 259 | 1349.7 | 9 |
+| Q12501 | [Great Wall of China](https://audiala.com/en/china/beijing/great-wall-of-china) | 万里の長城 | fortification | Beijing | CN | 193 | 142.6 | 5 |
+| Q243 | [Eiffel Tower](https://audiala.com/en/france/paris/eiffel-tower) | エッフェル塔 | tower | Paris | FR | 189 | 225.2 | 10 |
+| Q9141 | [Taj Mahal](https://audiala.com/en/india/agra/taj-mahal) | タージ・マハル | monument | Agra | IN | 180 | 94.8 | 10 |
+| Q478595 | [Tan Son Nhat International Airport](https://audiala.com/en/vietnam/ho-chi-minh-city/tan-son-nhat-international-airport) | タンソンニャット国際空港 | building | Ho Chi Minh City | VN | 170 | 15.5 | 9 |
+| Q19675 | [Louvre Museum](https://audiala.com/en/france/paris/louvre-museum) | ルーヴル美術館 | museum | Paris | FR | 165 | 460.8 | 10 |
+| Q9202 | [Statue of Liberty](https://audiala.com/en/united-states/new-york-city/statue-of-liberty) | 自由の女神像 | statue | New York City | US | 156 | 142.1 | 10 |
+| Q12506 | [Hagia Sophia](https://audiala.com/en/turkey/istanbul/hagia-sophia) | アヤソフィア | mosque | Istanbul | TR | 150 | 132.5 | 10 |
+| Q676203 | [Machu Picchu](https://audiala.com/en/peru/machu-picchu/machu-picchu) | マチュ・ピチュ | archaeological-site | Machu Picchu | PE | 147 | 63.0 | 9 |
+| Q10285 | [Colosseum](https://audiala.com/en/italy/rome/colosseum) | コロッセオ | museum | Rome | IT | 146 | 129.8 | 10 |
+| Q35525 | [White House](https://audiala.com/en/united-states/washington/white-house) | ホワイトハウス | palace | Washington | US | 143 | 485.0 | 9 |
+| Q5086 | [Berlin Wall](https://audiala.com/en/germany/berlin/berliner-mauer) | ベルリンの壁 | fortification | Berlin | DE | 141 | 303.6 | 10 |
+| Q12495 | [Burj Khalifa](https://audiala.com/en/united-arab-emirates/dubai/burj-khalifa) | ブルジュ・ハリーファ | building | Dubai | AE | 140 | 49.6 | 10 |
+| Q34221 | [Niagara Falls](https://audiala.com/en/canada/niagara-falls/niagara-falls) | ナイアガラの滝 | waterfall | Niagara Falls | CA | 135 | 93.9 | 10 |
+| Q524 | [Mount Vesuvius](https://audiala.com/en/italy/naples/mount-vesuvius) | ヴェスヴィオ | mountain | Naples | IT | 134 | 104.0 | 9 |
+| Q10288 | [Parthenon](https://audiala.com/en/greece/athens/parthenon) | パルテノン神殿 | temple | Athens | GR | 133 | 141.1 | 7 |
+| Q12512 | [St. Peter'S Basilica](https://audiala.com/en/vatican-city/vatican-city/saint-peters-basilica) | サン・ピエトロ大聖堂 | church | Vatican City | VA | 130 | 223.4 | 9 |
+| Q41180 | [La Marseillaise](https://audiala.com/en/france/marseille/la-marseillaise) | ラ・マルセイエーズ | attraction | Marseille | FR | 124 | 141.1 | 5 |
+| Q2981 | [Notre-Dame de Paris](https://audiala.com/en/france/paris/notre-dame-de-paris) | ノートルダム大聖堂 | cathedral | Paris | FR | 124 | 172.4 | 9 |
+| Q37200 | [Great Pyramid of Giza](https://audiala.com/en/egypt/gizeh/great-pyramid-of-giza) | ギザの大ピラミッド | archaeological-site | Gizeh | EG | 123 | 66.1 | 10 |
 
 Warts on display (deliberately — see next section): Q85 is Cairo itself
 carrying an `archaeological-site` P31 path; Q41180 resolves to the anthem
-*La Marseillaise* rather than the Marseille monument depicting it. Both are
-QID-mapping artifacts in the long tail.
+*La Marseillaise* rather than the Marseille monument depicting it; some
+English names keep a title-casing artifact (*St. Peter'S Basilica*). These
+are mapping and naming artifacts in the long tail. Note how the search decile
+diverges from notability: the Great Wall of China (5) and the Parthenon (7)
+sit well below the Eiffel Tower or the Louvre (10).
+
+## ML task: predict search visibility
+
+`search_impressions_decile` turns the dataset into a tabular benchmark:
+**given open facts about a travel place, predict how often its guide pages
+appear in Google Search.**
+
+- **Target:** Google Web impressions of the place's audiala.com guides, all
+  11 language pages summed, from **2026-07-03 to 2026-09-25** (85 days),
+  converted to a decile. `0` = no impressions in the window (177 rows);
+  `1` … `10` are equal-sized buckets (~3,311 rows each) ranked among places
+  with at least one impression.
+- **What it measures:** search visibility of Audiala's pages. It mixes real
+  search demand for the place with how well the page ranks, in 11 languages.
+  It is not a direct measure of a place's global popularity.
+- **Suggested metrics:** Spearman correlation or quadratic weighted kappa
+  (the target is ordinal); exact-decile and within-±1 accuracy.
+- **Suggested split:** hold out whole cities or countries to test
+  generalization to new places, not just unseen rows.
+- **Baseline** (gradient-boosted trees on `sitelinks`, `wikidata_pagerank`,
+  `category`, `country_iso2`, coordinates, `article_tier` and the number of
+  language URLs; 5-fold CV): **Spearman 0.49**, exact decile **13.6 %**
+  (chance ≈ 9 %), within ±1 **40.6 %**. Sitelinks alone reach Spearman 0.45,
+  PageRank 0.24. The multilingual names, city context and geography are
+  largely untapped.
+- **Caveats:** a summer window, so seasonal places are skewed; relative
+  deciles only, so raw volumes, clicks, CTR and positions stay private.
 
 ## Known coverage limits
 
@@ -156,19 +194,19 @@ is; please don't present it as something it isn't.
 - **Coverage is skewed.** 93 countries, but heavily weighted toward the US,
   Western Europe, and India. Many countries have a handful of rows; large
   parts of Africa, Central Asia, and Oceania are thin or absent. Within
-  covered countries, coverage clusters around ~1,200 cities.
+  covered countries, coverage clusters around ~1,360 cities.
 - **Selection reflects publishing history, not importance.** What got a
   guide first depended on Audiala's city rollout order and demand signals,
   not on any objective notability ranking.
 - **Category is best-effort.** ~87 % of rows are typed from Wikidata
   `P31/P279*`; the rest fall back to name patterns or the generic
-  `attraction`. `building` (5,408 rows) is a weak class. Treat `category`
+  `attraction`. `building` (5,477 rows) is a weak class. Treat `category`
   as a convenience facet, not ground truth.
-- **QID mapping has a long tail of imperfection.** This build removed 188
+- **QID mapping has a long tail of imperfection.** This build removed 207
   detectable mis-mappings (articles keyed to person QIDs, embassies,
   Wikimedia list pages), but subtler cases remain (see the sample table's
   warts). If you find one, please report it.
-- **URL liveness ≈ 99.7 %,** measured on a 330-URL random sample at build
+- **URL liveness ≈ 100 %,** measured on a 300-URL random sample at build
   time. Guides are occasionally re-curated; retired pages return HTTP 410.
 - **Fame signals are snapshots.** PageRank comes from a danker run imported
   into our DB; sitelink counts from our self-hosted Wikidata snapshot. Both
@@ -182,9 +220,14 @@ is; please don't present it as something it isn't.
 ```bash
 pip install psycopg2-binary requests anyascii
 export AURORA_PASSWORD=…   # Audiala content-DB credential (internal)
-python3 build/build_dataset.py            # writes data/ (93 s typical)
+python3 build/build_dataset.py            # writes data/
 python3 build/build_dataset.py --help     # options: --limit, --check-urls, --no-qlever
+python3 build/add_search_target.py --gsc-json GSC.json --window-label START..END
 ```
+
+The build queries the database in batches of 2,000 IDs, each in its own
+short read-only transaction, so it runs safely against hot-standby replicas.
+The ML target needs Audiala's private Search Console export.
 
 The build requires read access to Audiala's internal content database and
 (optionally, for sitelinks/typing/exclusions) the self-hosted Wikidata
@@ -206,7 +249,9 @@ derived dataset or paper, cite the dataset name and link to audiala.com.
 
 ## Update cadence
 
-Initial release, 2026-07-25. The build is fully scripted, so refreshes are
-cheap; expect periodic updates as coverage grows. Published on
+Initial release, 2026-07-25. Refreshed 2026-09-28: rebuilt from the current
+catalog (33,289 places) and added `search_impressions_decile`. The build is
+fully scripted, so refreshes are cheap; expect periodic updates as coverage
+grows. Published on
 [GitHub](https://github.com/audiala/open-data) and
 [Hugging Face](https://huggingface.co/datasets/audiala/audiala-places).

@@ -84,6 +84,7 @@ from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.errors
 import requests
 from anyascii import anyascii
 
@@ -534,6 +535,7 @@ WHERE a.language = 'en'
   AND NOT EXISTS (SELECT 1 FROM places p2
                   WHERE p2.wikidata_id = a.wikidata_id
                     AND p2.place_kind = 'non_tourism')
+  AND a.wikidata_id = ANY(%s)
 """
 
 PER_LANG_SQL = """
@@ -541,6 +543,7 @@ SELECT wikidata_id, language, name, city, country
 FROM articles
 WHERE (structured_content IS NOT NULL OR report IS NOT NULL)
   AND wikidata_id ~ '^Q[1-9][0-9]*$'
+  AND wikidata_id = ANY(%s)
 """
 
 TRANSLATIONS_SQL = """
@@ -548,6 +551,45 @@ SELECT wikidata_id, en, fr, de, es, pt, it, hi, zh, cs, ja, ru
 FROM translations
 WHERE wikidata_id = ANY(%s)
 """
+
+
+CANDIDATES_SQL = """
+SELECT DISTINCT wikidata_id
+FROM articles
+WHERE language = 'en'
+  AND (structured_content IS NOT NULL OR report IS NOT NULL)
+  AND wikidata_id ~ '^Q[1-9][0-9]*$'
+"""
+
+
+def fetch_batched(conn, sql: str, qids: list[str], batch_size: int = 2000,
+                  retries: int = 4) -> list[dict]:
+    """Run `sql` (which must end with a `wikidata_id = ANY(%s)` filter) in
+    short, independent read-only transactions.
+
+    Hot-standby replicas cancel long-running snapshots that conflict with WAL
+    replay ("canceling statement due to conflict with recovery"). Small
+    batches keep every snapshot short; a cancelled batch is retried.
+    """
+    out: list[dict] = []
+    for i in range(0, len(qids), batch_size):
+        batch = qids[i:i + batch_size]
+        for attempt in range(retries):
+            try:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(sql, (batch,))
+                rows = cur.fetchall()
+                cur.close()
+                conn.rollback()  # end the read-only transaction
+                out.extend(rows)
+                break
+            except (psycopg2.errors.SerializationFailure,
+                    psycopg2.errors.QueryCanceled):
+                conn.rollback()
+                if attempt == retries - 1:
+                    raise
+                time.sleep(2 * (attempt + 1))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -571,17 +613,21 @@ def main():
 
     print("1/6 querying core rows (published EN articles + best place + pagerank)...")
     conn = connect_db()
-    cur = conn.cursor(name="core", cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.itersize = 5000
-    cur.execute(CORE_SQL + (f" LIMIT {int(args.limit)}" if args.limit else ""))
+    cur = conn.cursor()
+    cur.execute(CANDIDATES_SQL)
+    candidates = sorted((r[0] for r in cur.fetchall()), key=lambda q: int(q[1:]))
+    cur.close()
+    conn.rollback()
+    if args.limit:
+        candidates = candidates[:int(args.limit)]
+    print(f"    {len(candidates)} candidate QIDs")
     core: dict[str, dict] = {}
     dropped_no_coords = 0
-    for r in cur:
+    for r in fetch_batched(conn, CORE_SQL, candidates):
         if r["latitude"] is None or r["longitude"] is None:
             dropped_no_coords += 1
             continue
         core[r["wikidata_id"]] = dict(r)
-    cur.close()
     print(f"    {len(core)} places with coordinates ({dropped_no_coords} dropped: no coords)")
 
     qids = sorted(core, key=lambda q: int(q[1:]))
@@ -591,21 +637,18 @@ def main():
     cur.execute(TRANSLATIONS_SQL, (qids,))
     translations = {r["wikidata_id"]: r for r in cur.fetchall()}
     cur.close()
+    conn.rollback()
     print(f"    {len(translations)} translation rows")
 
     print("3/6 querying per-language article rows for URL derivation...")
-    cur = conn.cursor(name="perlang", cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.itersize = 20000
-    cur.execute(PER_LANG_SQL)
     urls: dict[str, dict[str, str]] = collections.defaultdict(dict)
-    for r in cur:
+    for r in fetch_batched(conn, PER_LANG_SQL, qids):
         qid, lang = r["wikidata_id"], r["language"]
         if qid not in core or lang not in LANGUAGES:
             continue
         permalink = build_permalink(lang, r["country"], r["city"], r["name"], qid)
         # Canonical site URLs carry NO trailing slash (trailing-slash 301s away).
         urls[qid][lang] = f"{SITE_BASE}/{permalink}"
-    cur.close()
     conn.close()
     print(f"    URLs computed for {len(urls)} places")
 
